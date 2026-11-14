@@ -39,6 +39,22 @@ async def get_patient_insight(patient: PatientUser, db: DbSession):
         ],
     }
     insight = await groq_service.generate_patient_insight(patient_data)
+    if not insight and logs:
+        # Smart rule-based fallback if Groq AI is temporarily unreachable
+        avg_pain = sum(l.pain_level for l in logs) / len(logs)
+        avg_sleep = sum(l.sleep_hours for l in logs) / len(logs)
+        insight = {
+            "summary": f"Your recovery is progressing. Over your recent logs, your average pain level is {avg_pain:.1f}/10 and you averaged {avg_sleep:.1f} hours of sleep.",
+            "tips": [
+                "Continue drinking plenty of fluids and following your doctor's care plan.",
+                "Log your daily symptoms each morning to help your medical team track your recovery curve.",
+            ],
+            "warning_signs": [
+                "Sudden sharp increase in pain or severe headache.",
+                "Fever above 101°F (38.5°C) or difficulty breathing.",
+            ],
+            "encouragement": "Every day of rest brings your body closer to full recovery. Keep taking good care of yourself!",
+        }
     return ApiResponse(data=insight)
 
 

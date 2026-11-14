@@ -112,3 +112,26 @@ async def send_sos_alert(
         f"🚨 SOS — {patient_name} needs immediate attention",
         html,
     )
+
+
+async def send_sos_confirmation_to_patient(
+    patient_email: str,
+    patient_name: str,
+    notes: str | None = None,
+) -> bool:
+    """Send an SOS confirmation to the patient confirming their alert was dispatched."""
+    safe_name = html_escape(patient_name)
+    safe_notes = html_escape(notes or "No additional notes provided")
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px;border:2px solid #ef4444;border-radius:12px">
+      <h2 style="color:#ef4444;margin:0 0 12px">🚨 SOS Emergency Alert Dispatched</h2>
+      <p>Hello <strong>{safe_name}</strong>,</p>
+      <p>Your emergency SOS alert has been recorded and dispatched to your doctor and caregiver.</p>
+      <p><strong>Your Notes:</strong> {safe_notes}</p>
+      <p style="color:#4b5563;font-size:13px">If you are in immediate life-threatening danger, please dial your local emergency services (e.g. 112 or 911).</p>
+    </div>"""
+    return await _send(
+        patient_email,
+        "🚨 SOS Alert Dispatched — RecoverEase",
+        html,
+    )

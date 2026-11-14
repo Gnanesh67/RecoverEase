@@ -261,6 +261,14 @@ async def trigger_sos(
             except Exception as e:
                 logger.error("sos_caregiver_email_error", caregiver_email=caregiver_email, error=str(e))
 
+        if patient.email:
+            try:
+                await email_service.send_sos_confirmation_to_patient(
+                    patient.email, patient_name, notes
+                )
+            except Exception as e:
+                logger.error("sos_patient_email_error", patient_email=patient.email, error=str(e))
+
     asyncio.create_task(_dispatch_notifications())
 
     return escalation

@@ -93,7 +93,15 @@ async def list_sessions(user: CurrentUser, db: DbSession):
         ).order_by(ChatSession.updated_at.desc())
     )
     sessions = result.scalars().all()
-    return ApiResponse(data=[_session_to_out(s) for s in sessions])
+    # Deduplicate multiple sessions between the same patient and doctor
+    seen_pairs: set[tuple[UUID, UUID | None]] = set()
+    deduped: list[ChatSession] = []
+    for s in sessions:
+        pair_key = (s.patient_id, s.doctor_id)
+        if pair_key not in seen_pairs:
+            seen_pairs.add(pair_key)
+            deduped.append(s)
+    return ApiResponse(data=[_session_to_out(s) for s in deduped])
 
 
 # ─────────────────────────────────────────────
@@ -149,8 +157,9 @@ async def request_doctor_chat(body: CreateSessionIn, patient: PatientUser, db: D
             ChatSession.status != ChatSessionStatus.CLOSED,
         )
     )
-    if existing.scalar_one_or_none():
-        raise AppError("A chat session with this doctor already exists", 409)
+    existing_session = existing.scalar_one_or_none()
+    if existing_session:
+        return ApiResponse(data=_session_to_out(existing_session), message="Session already active")
 
     # Check link status
     link_result = await db.execute(

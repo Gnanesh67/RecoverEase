@@ -844,11 +844,13 @@ function ChatThread({
 function RequestChatModal({
     doctors,
     existingSessions,
+    isSubmitting = false,
     onRequest,
     onClose,
 }: {
     doctors: DoctorLink[];
     existingSessions: ChatSession[];
+    isSubmitting?: boolean;
     onRequest: (doctorId: string) => void;
     onClose: () => void;
 }) {
@@ -879,7 +881,8 @@ function RequestChatModal({
                             <li key={link.link_id}>
                                 <button
                                     onClick={() => onRequest(link.doctor_id)}
-                                    className="w-full flex items-center gap-3 rounded-xl border border-gray-100 p-3 hover:bg-gray-50 text-left transition-colors"
+                                    disabled={isSubmitting}
+                                    className="w-full flex items-center gap-3 rounded-xl border border-gray-100 p-3 hover:bg-gray-50 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white text-sm font-bold" style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)" }}>
                                         {link.doctor?.name?.charAt(0) ?? "D"}
@@ -1103,6 +1106,7 @@ export default function ChatPage() {
                     <RequestChatModal
                         doctors={myDoctors.data ?? []}
                         existingSessions={allSessions}
+                        isSubmitting={requestChat.isPending}
                         onRequest={(id) => requestChat.mutate(id)}
                         onClose={() => setShowRequestModal(false)}
                     />
