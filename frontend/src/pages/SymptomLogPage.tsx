@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -85,6 +86,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 export default function SymptomLogPage() {
+    const navigate = useNavigate();
     const addToast = useStore((s) => s.addToast);
     const qc = useQueryClient();
     const [voiceActive, setVoiceActive] = useState(false);
@@ -111,11 +113,14 @@ export default function SymptomLogPage() {
     const mutation = useMutation({
         mutationFn: (data: LogSymptomRequest) => symptomApi.logSymptom(data),
         onSuccess: () => {
-            addToast("success", "Logged!", "Today's symptoms saved");
+            addToast("success", "Logged!", "Symptoms recorded successfully");
             qc.invalidateQueries({ queryKey: ["today-log"] });
             qc.invalidateQueries({ queryKey: ["symptom-trend"] });
             qc.invalidateQueries({ queryKey: ["symptom-summary"] });
             qc.invalidateQueries({ queryKey: ["patient-profile"] });
+            qc.invalidateQueries({ queryKey: ["ai-insight"] });
+            qc.invalidateQueries({ queryKey: ["symptom-logs-heatmap"] });
+            navigate("/dashboard");
         },
         onError: (err: Error) => addToast("error", "Failed", err.message),
     });
@@ -177,46 +182,49 @@ export default function SymptomLogPage() {
         recognition.start();
     }
 
-    // Already logged today
-    if (todayLog.data) {
-        return (
-            <PageTransition>
-                <div className="mx-auto max-w-lg space-y-6">
-                    <div className="relative overflow-hidden rounded-2xl p-6 text-center" style={{ background: "linear-gradient(135deg, #052e16, #064e3b, #065f46)", border: "1px solid rgba(16,185,129,0.2)", boxShadow: "0 8px 32px rgb(16 185 129 / 0.15)" }}>
-                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl" style={{ background: "rgba(16,185,129,0.2)", border: "1px solid rgba(16,185,129,0.3)", boxShadow: "0 0 24px rgb(16 185 129 / 0.3)" }}>
-                            <CheckCircle className="h-8 w-8 text-emerald-400" />
-                        </div>
-                        <h2 className="mt-4 text-xl font-bold text-white">Already Logged Today</h2>
-                        <div className="mt-3 flex justify-center gap-4">
-                            <div className="rounded-xl bg-white/5 px-3 py-2">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/70">Pain</p>
-                                <p className="text-lg font-bold text-white">{todayLog.data.pain_level}<span className="text-sm text-white/40">/10</span></p>
-                            </div>
-                            <div className="rounded-xl bg-white/5 px-3 py-2">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/70">Mood</p>
-                                <p className="text-lg font-bold text-white">{todayLog.data.mood}<span className="text-sm text-white/40">/10</span></p>
-                            </div>
-                            <div className="rounded-xl bg-white/5 px-3 py-2">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/70">Energy</p>
-                                <p className="text-lg font-bold text-white">{todayLog.data.energy}<span className="text-sm text-white/40">/10</span></p>
-                            </div>
-                        </div>
-                        {todayLog.data.ai_insight && (
-                            <div className="mt-4 rounded-xl bg-white/5 p-4 text-left" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
-                                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400 mb-1">AI Insight</p>
-                                <p className="text-sm text-white/70">{todayLog.data.ai_insight.summary}</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </PageTransition>
-        );
-    }
-
     return (
         <PageTransition>
             <div className="mx-auto max-w-lg space-y-6">
-                <h1 className="page-heading">Log Symptoms</h1>
+                <div className="flex items-center justify-between">
+                    <h1 className="page-heading">Log Symptoms</h1>
+                    <span className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
+                        Unlimited Logging
+                    </span>
+                </div>
+
+                {todayLog.data && (
+                    <div className="rounded-2xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-teal-50/70 p-4 shadow-sm space-y-2">
+                        <div className="flex items-center justify-between">
+                            <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
+                                <CheckCircle className="h-4 w-4 text-emerald-600" /> Latest Log Today
+                            </span>
+                            <span className="text-[11px] text-gray-500">
+                                Submit below to add another entry
+                            </span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs">
+                            <span className="bg-white/90 border border-emerald-100 px-2.5 py-1 rounded-lg text-gray-700 font-medium">
+                                Pain: <strong className="text-gray-900">{todayLog.data.pain_level}/10</strong>
+                            </span>
+                            <span className="bg-white/90 border border-emerald-100 px-2.5 py-1 rounded-lg text-gray-700 font-medium">
+                                Mood: <strong className="text-gray-900">{todayLog.data.mood}/10</strong>
+                            </span>
+                            <span className="bg-white/90 border border-emerald-100 px-2.5 py-1 rounded-lg text-gray-700 font-medium">
+                                Energy: <strong className="text-gray-900">{todayLog.data.energy}/10</strong>
+                            </span>
+                            {todayLog.data.temperature && (
+                                <span className="bg-white/90 border border-emerald-100 px-2.5 py-1 rounded-lg text-gray-700 font-medium">
+                                    Temp: <strong className="text-gray-900">{todayLog.data.temperature}°F</strong>
+                                </span>
+                            )}
+                        </div>
+                        {todayLog.data.ai_insight && (
+                            <p className="text-[11px] text-emerald-800 bg-white/70 rounded-lg p-2 border border-emerald-100">
+                                💡 {todayLog.data.ai_insight.summary}
+                            </p>
+                        )}
+                    </div>
+                )}
 
                 <form
                     onSubmit={handleSubmit((d) => mutation.mutate(d))}

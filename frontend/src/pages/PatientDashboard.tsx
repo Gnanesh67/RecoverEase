@@ -114,7 +114,7 @@ export default function PatientDashboard() {
                         </div>
                         <Link to="/log">
                             <button className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-white/15 border border-white/20">
-                                Log Today
+                                Log Symptoms
                             </button>
                         </Link>
                     </div>
