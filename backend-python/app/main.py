@@ -8,7 +8,7 @@ import time
 from contextlib import asynccontextmanager
 
 import socketio
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -116,6 +116,24 @@ def create_app() -> socketio.ASGIApp:
             "uptime": round(time.time() - START_TIME, 2),
             "environment": settings.node_env,
         }
+
+    # ── Email Diagnostic Test Endpoint ──────────────
+    @app.get("/api/test-email", tags=["Debug"])
+    async def test_email(to: str = Query(..., description="Recipient email address")):
+        """Test and diagnose email delivery over HTTP or SMTP."""
+        from app.services.email_service import send_email_with_diagnostics
+        res = await send_email_with_diagnostics(
+            to=to,
+            subject="RecoverEase Email Delivery Test",
+            html_body="""
+            <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #10b981;border-radius:12px">
+                <h2 style="color:#10b981;margin:0 0 12px">RecoverEase Email Test Successful!</h2>
+                <p>If you are reading this email, your notification delivery system is configured correctly.</p>
+                <p style="color:#6b7280;font-size:12px">Sent via RecoverEase automated health check.</p>
+            </div>
+            """,
+        )
+        return res
 
     # ── API Routes ──────────────────────────────────
     app.include_router(auth_router, prefix="/api")

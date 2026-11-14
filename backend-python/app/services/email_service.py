@@ -41,14 +41,60 @@ def _build_message(to: str, subject: str, html_body: str) -> MIMEMultipart:
     return msg
 
 
-async def _send(to: str, subject: str, html_body: str) -> bool:
-    """Core send — supports Resend HTTP API (port 443, Render free tier compatible) or Gmail SMTP."""
-    if not settings.smtp_enabled:
-        logger.info("email_logged_only", to=to, subject=subject)
-        return False
+async def send_email_with_diagnostics(to: str, subject: str, html_body: str) -> dict:
+    """Send email via Brevo API, Resend API, or Gmail SMTP, returning full diagnostics."""
+    diag = {
+        "success": False,
+        "recipient": to,
+        "env_detected": {
+            "has_brevo_api_key": bool(settings.brevo_api_key),
+            "has_resend_api_key": bool(settings.resend_api_key),
+            "has_smtp_user": bool(settings.smtp_user),
+            "has_smtp_password": bool(settings.smtp_password),
+        },
+        "provider_attempted": None,
+        "details": None,
+        "error": None,
+    }
 
-    # 1. Prefer Resend HTTP API if configured (port 443 — never blocked by Render)
+    # 1. Brevo HTTP API (Port 443 — works on Render free tier to ANY recipient)
+    if settings.brevo_api_key:
+        diag["provider_attempted"] = "brevo"
+        sender_email = settings.brevo_sender_email or settings.smtp_user or "alerts@recoverease.dev"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    "https://api.brevo.com/v3/smtp/email",
+                    headers={
+                        "accept": "application/json",
+                        "api-key": settings.brevo_api_key,
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "sender": {
+                            "name": settings.smtp_from_name,
+                            "email": sender_email,
+                        },
+                        "to": [{"email": to}],
+                        "subject": subject,
+                        "htmlContent": html_body,
+                    },
+                )
+                if resp.status_code in (200, 201):
+                    logger.info("email_sent_brevo", to=to, subject=subject)
+                    diag["success"] = True
+                    diag["details"] = resp.json()
+                    return diag
+                else:
+                    logger.error("brevo_failed", to=to, status=resp.status_code, body=resp.text)
+                    diag["error"] = f"Brevo HTTP {resp.status_code}: {resp.text}"
+        except Exception as e:
+            logger.error("brevo_exception", to=to, error=str(e))
+            diag["error"] = f"Brevo exception: {str(e)}"
+
+    # 2. Resend HTTP API (Port 443 — works on Render free tier)
     if settings.resend_api_key:
+        diag["provider_attempted"] = "resend"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(
@@ -66,14 +112,27 @@ async def _send(to: str, subject: str, html_body: str) -> bool:
                 )
                 if resp.status_code in (200, 201):
                     logger.info("email_sent_resend", to=to, subject=subject)
-                    return True
+                    diag["success"] = True
+                    diag["details"] = resp.json()
+                    return diag
                 else:
                     logger.error("resend_failed", to=to, status=resp.status_code, body=resp.text)
+                    err_text = resp.text
+                    if "testing emails to your own email address" in err_text:
+                        diag["error"] = (
+                            f"Resend Restriction: {err_text}. "
+                            "Resend free tier only sends to the email address used to create the Resend account. "
+                            "To send to any recipient, add BREVO_API_KEY in Render."
+                        )
+                    else:
+                        diag["error"] = f"Resend HTTP {resp.status_code}: {err_text}"
         except Exception as e:
             logger.error("resend_exception", to=to, error=str(e))
+            diag["error"] = f"Resend exception: {str(e)}"
 
-    # 2. Gmail SMTP
+    # 3. Gmail SMTP (fallback for local dev or paid Render with open ports)
     if settings.smtp_user and settings.smtp_password:
+        diag["provider_attempted"] = "smtp"
         try:
             msg = _build_message(to, subject, html_body)
             use_tls = settings.smtp_port == 465
@@ -86,15 +145,37 @@ async def _send(to: str, subject: str, html_body: str) -> bool:
                 password=settings.smtp_password,
                 use_tls=use_tls,
                 start_tls=start_tls,
-                timeout=10.0,
+                timeout=8.0,
             )
             logger.info("email_sent_smtp", to=to, subject=subject)
-            return True
+            diag["success"] = True
+            diag["details"] = "Email sent successfully via Gmail SMTP."
+            return diag
         except Exception as e:
             logger.error("email_failed", to=to, subject=subject, error=str(e))
-            return False
+            err_msg = str(e)
+            if "Timed out" in err_msg or "timeout" in err_msg.lower():
+                diag["error"] = (
+                    f"SMTP timeout: {err_msg}. "
+                    "Render Free Tier blocks outbound SMTP ports 25, 465, and 587. "
+                    "Please set BREVO_API_KEY or RESEND_API_KEY in Render Environment to send over HTTPS port 443."
+                )
+            else:
+                diag["error"] = f"SMTP error: {err_msg}"
 
-    return False
+    if not diag["provider_attempted"]:
+        diag["error"] = (
+            "No email service configured. Please add BREVO_API_KEY, RESEND_API_KEY, "
+            "or SMTP_USER/SMTP_PASSWORD in Render Dashboard -> Environment."
+        )
+
+    return diag
+
+
+async def _send(to: str, subject: str, html_body: str) -> bool:
+    """Core send — returns True on success, never raises."""
+    result = await send_email_with_diagnostics(to, subject, html_body)
+    return bool(result.get("success", False))
 
 
 async def send_caregiver_alert(

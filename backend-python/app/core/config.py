@@ -37,7 +37,9 @@ class Settings(BaseSettings):
     groq_api_key: str
     groq_model: str = "llama-3.1-8b-instant"
 
-    # -- Email (Resend HTTP API for Render Free Tier, or Gmail SMTP) --
+    # -- Email (HTTP API for Render Free Tier: Brevo or Resend, or Gmail SMTP) --
+    brevo_api_key: str = ""      # Brevo API key (xkeysib-...) works over HTTPS port 443 to ANY recipient!
+    brevo_sender_email: str = "" # Email verified in Brevo (e.g. your Gmail address)
     resend_api_key: str = ""     # Resend API key (re_...) works over HTTPS port 443 on Render free tier
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
@@ -62,8 +64,8 @@ class Settings(BaseSettings):
 
     @property
     def smtp_enabled(self) -> bool:
-        """True when an email service (Resend API or Gmail SMTP) is configured."""
-        return bool(self.resend_api_key or (self.smtp_user and self.smtp_password))
+        """True when an email service (Brevo, Resend, or Gmail SMTP) is configured."""
+        return bool(self.brevo_api_key or self.resend_api_key or (self.smtp_user and self.smtp_password))
 
     @property
     def whatsapp_enabled(self) -> bool:
