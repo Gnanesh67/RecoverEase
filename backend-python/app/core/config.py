@@ -5,6 +5,7 @@ Crashes immediately on startup if required vars are invalid.
 """
 
 from pathlib import Path
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -77,8 +78,23 @@ class Settings(BaseSettings):
                 v = v.replace("postgres://", "postgresql+asyncpg://", 1)
             elif v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
                 v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
-            if "sslmode=" in v:
-                v = v.replace("sslmode=", "ssl=")
+
+            # Strip query parameters unsupported by asyncpg (e.g. channel_binding from Neon)
+            try:
+                parsed = urlparse(v)
+                if parsed.query:
+                    query_params = parse_qs(parsed.query, keep_blank_values=True)
+                    query_params.pop("channel_binding", None)
+                    query_params.pop("gssencmode", None)
+                    if "sslmode" in query_params:
+                        ssl_val = query_params.pop("sslmode")
+                        if "ssl" not in query_params:
+                            query_params["ssl"] = ssl_val
+                    new_query = urlencode(query_params, doseq=True)
+                    v = urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
+            except Exception:
+                pass
+
         if not isinstance(v, str) or not v.startswith("postgresql+asyncpg://"):
             raise ValueError(
                 "DATABASE_URL must use the asyncpg driver. "

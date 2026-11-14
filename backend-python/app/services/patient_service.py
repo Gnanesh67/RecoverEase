@@ -4,12 +4,15 @@ Patient service — profile, full view (doctor), SOS trigger, escalation review.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.logger import logger
 
 from app.middleware.error_handler import AppError
 from app.models.models import (
@@ -197,12 +200,15 @@ async def trigger_sos(
         await db.flush()
         await db.refresh(escalation)
 
-    # Notify ALL linked doctors
+    # Notify ALL linked doctors asynchronously
+    email_alerts: list[tuple[str, str, str | None]] = []
+    whatsapp_alerts: list[tuple[str, str]] = []
+
     for link in links:
         doctor_result = await db.execute(select(User).where(User.id == link.doctor_id))
         doctor = doctor_result.scalar_one_or_none()
         if doctor:
-            await email_service.send_sos_alert(doctor.email, patient.name, notes)
+            # Immediate Socket.IO event to doctor's browser
             if sio:
                 await sio.emit(
                     "patient_alert",
@@ -215,6 +221,10 @@ async def trigger_sos(
                     },
                     room=f"doctor:{link.doctor_id}",
                 )
+
+            if doctor.email:
+                email_alerts.append((doctor.email, patient.name, notes))
+
             # WhatsApp alert to doctor
             if doctor.whatsapp_phone:
                 sos_msg = (
@@ -224,12 +234,34 @@ async def trigger_sos(
                     f"Message: {notes or 'No details provided'}\n"
                     f"👉 Open your RecoverEase dashboard immediately."
                 )
-                await whatsapp_service.send_text(doctor.whatsapp_phone, sos_msg)
+                whatsapp_alerts.append((doctor.whatsapp_phone, sos_msg))
 
-    if patient.caregiver_email:
-        await email_service.send_caregiver_alert(
-            patient.caregiver_email, patient.name, "CRITICAL", f"SOS: {notes or 'No details'}"
-        )
+    caregiver_email = patient.caregiver_email
+    patient_name = patient.name
+
+    # Dispatch external email & WhatsApp in background so HTTP response returns immediately
+    async def _dispatch_notifications() -> None:
+        for d_email, p_name, n in email_alerts:
+            try:
+                await email_service.send_sos_alert(d_email, p_name, n)
+            except Exception as e:
+                logger.error("sos_email_error", doctor_email=d_email, error=str(e))
+
+        for phone, msg in whatsapp_alerts:
+            try:
+                await whatsapp_service.send_text(phone, msg)
+            except Exception as e:
+                logger.error("sos_whatsapp_error", phone=phone, error=str(e))
+
+        if caregiver_email:
+            try:
+                await email_service.send_caregiver_alert(
+                    caregiver_email, patient_name, "CRITICAL", f"SOS: {notes or 'No details'}"
+                )
+            except Exception as e:
+                logger.error("sos_caregiver_email_error", caregiver_email=caregiver_email, error=str(e))
+
+    asyncio.create_task(_dispatch_notifications())
 
     return escalation
 

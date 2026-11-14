@@ -84,7 +84,13 @@ def create_app() -> socketio.ASGIApp:
     )
 
     # ── Middleware ───────────────────────────────────
-    origins = settings.cors_origin.split(",")
+    raw_origins = [o.strip() for o in settings.cors_origin.split(",") if o.strip()]
+    origins: list[str] = []
+    for o in raw_origins:
+        origins.append(o)
+        if o != "*":
+            origins.append(o.rstrip("/"))
+    origins = list(set(origins))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"] if "*" in origins else origins,

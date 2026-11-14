@@ -35,15 +35,22 @@ def run_rule_checks(log: SymptomLog) -> list[dict[str, Any]]:
         if value is None:
             continue
 
+        # Support both Fahrenheit and Celsius for fever checks
+        effective_threshold = threshold
+        if field == "temperature" and threshold is not None:
+            if value > 50 and threshold < 50:
+                # 38.5 C -> 101.3 F
+                effective_threshold = round(threshold * 9 / 5 + 32, 1)
+
         hit = False
         if compare == "gte":
-            hit = value >= threshold
+            hit = value >= effective_threshold
         elif compare == "lte":
-            hit = value <= threshold
+            hit = value <= effective_threshold
         elif compare == "lt":
-            hit = value < threshold
+            hit = value < effective_threshold
         elif compare == "gt":
-            hit = value > threshold
+            hit = value > effective_threshold
 
         if hit:
             triggered.append({
@@ -51,7 +58,7 @@ def run_rule_checks(log: SymptomLog) -> list[dict[str, Any]]:
                 "description": rule["description"],
                 "severity": rule["severity"],
                 "value": value,
-                "threshold": threshold,
+                "threshold": effective_threshold,
             })
 
     return triggered

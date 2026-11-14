@@ -47,13 +47,17 @@ async def _send(to: str, subject: str, html_body: str) -> bool:
         return False
     try:
         msg = _build_message(to, subject, html_body)
+        use_tls = settings.smtp_port == 465
+        start_tls = settings.smtp_port == 587
         await aiosmtplib.send(
             msg,
             hostname=settings.smtp_host,
             port=settings.smtp_port,
             username=settings.smtp_user,
             password=settings.smtp_password,
-            start_tls=True,
+            use_tls=use_tls,
+            start_tls=start_tls,
+            timeout=10.0,
         )
         logger.info("email_sent", to=to, subject=subject)
         return True

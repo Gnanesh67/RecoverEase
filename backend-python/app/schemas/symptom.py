@@ -18,7 +18,7 @@ class LogSymptomRequest(BaseModel):
     sleep_hours: float = Field(ge=0, le=24)
     appetite: int = Field(ge=1, le=10)
     energy: int = Field(ge=1, le=10)
-    temperature: float | None = Field(None, ge=35.0, le=42.0)
+    temperature: float | None = Field(None, ge=30.0, le=115.0)
     notes: str | None = Field(None, max_length=2000)
 
 
