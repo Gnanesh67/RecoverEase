@@ -12,7 +12,7 @@ import Badge from "@/components/Badge";
 import SymptomTrendChart from "@/components/charts/SymptomTrendChart";
 import MedicationHeatmap from "@/components/charts/MedicationHeatmap";
 import { PageTransition, Stagger, StaggerItem } from "@/components/motion";
-import { Activity, Brain, Calendar, CheckCircle, Clock, Heart, Moon, Target, Utensils, Zap, UserCheck } from "lucide-react";
+import { Activity, Brain, Calendar, CheckCircle, Clock, Heart, Moon, Target, Utensils, Zap, UserCheck, Pill, FileText, Timer, Stethoscope } from "lucide-react";
 import { Link } from "react-router-dom";
 import Button from "@/components/Button";
 import { differenceInDays, format, parseISO } from "date-fns";
@@ -54,6 +54,11 @@ export default function PatientDashboard() {
         queryFn: () => symptomApi.getLogs(28, 0).then((r) => r.data),
     });
 
+    const myPlans = useQuery({
+        queryKey: ["my-care-plans"],
+        queryFn: () => carePlanApi.getMyPlans().then((r) => r.data ?? []),
+    });
+
     const myTasks = useQuery({
         queryKey: ["my-tasks"],
         queryFn: () => carePlanApi.getMyTasks().then((r) => r.data ?? []),
@@ -75,6 +80,15 @@ export default function PatientDashboard() {
     const surgeryDay = user?.surgery_date
         ? differenceInDays(new Date(), parseISO(user.surgery_date))
         : null;
+
+    const safeFormatDate = (dateStr?: string | null) => {
+        if (!dateStr) return null;
+        try {
+            return format(parseISO(dateStr), "MMMM d, yyyy");
+        } catch {
+            return dateStr;
+        }
+    };
 
     return (
         <PageTransition>
@@ -211,6 +225,108 @@ export default function PatientDashboard() {
                         <p className="text-sm text-gray-400">Log symptoms to get AI insights.</p>
                     )}
                 </Card>
+
+                {/* Doctor's Care Plan & Prescriptions */}
+                {(myPlans.isLoading || (myPlans.data && myPlans.data.length > 0)) && (
+                    <Card>
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+                                <Stethoscope className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <h2 className="section-heading">Doctor's Care Plan & Prescriptions</h2>
+                                <p className="text-xs text-gray-500">Treatment schedule and medications prescribed by your doctor</p>
+                            </div>
+                        </div>
+
+                        {myPlans.isLoading ? (
+                            <Skeleton lines={4} />
+                        ) : (
+                            <div className="space-y-4">
+                                {myPlans.data!.map((plan, idx) => (
+                                    <div key={idx} className="rounded-xl border border-gray-100 bg-gray-50/50 p-4 space-y-4">
+                                        {/* Recovery Timeline & Duration */}
+                                        {(plan.expected_recovery_date || plan.recovery_duration) && (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                {plan.expected_recovery_date && (
+                                                    <div className="flex items-center gap-3 rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+                                                        <Calendar className="h-5 w-5 text-emerald-600 shrink-0" />
+                                                        <div>
+                                                            <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">Expected Recovery Date</p>
+                                                            <p className="text-sm font-bold text-emerald-950">
+                                                                {safeFormatDate(plan.expected_recovery_date)}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {plan.recovery_duration && (
+                                                    <div className="flex items-center gap-3 rounded-xl bg-blue-50 border border-blue-100 p-3">
+                                                        <Timer className="h-5 w-5 text-blue-600 shrink-0" />
+                                                        <div>
+                                                            <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-700">Recovery Duration</p>
+                                                            <p className="text-sm font-bold text-blue-950">
+                                                                {plan.recovery_duration}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Prescriptions Table */}
+                                        {plan.medications && plan.medications.length > 0 ? (
+                                            <div>
+                                                <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                                                    <Pill className="h-3.5 w-3.5 text-primary-500" /> Prescribed Medications
+                                                </div>
+                                                <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+                                                    <table className="w-full text-xs">
+                                                        <thead className="bg-gray-50 border-b border-gray-100 text-gray-600 font-semibold">
+                                                            <tr>
+                                                                <th className="px-3.5 py-2.5 text-left">Medication</th>
+                                                                <th className="px-3.5 py-2.5 text-left">Dosage</th>
+                                                                <th className="px-3.5 py-2.5 text-left">Schedule</th>
+                                                                <th className="px-3.5 py-2.5 text-left">Instructions</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-gray-100">
+                                                            {plan.medications.map((m, mIdx) => (
+                                                                <tr key={mIdx} className="hover:bg-gray-50/70 transition-colors">
+                                                                    <td className="px-3.5 py-2.5 font-semibold text-gray-900">{m.name}</td>
+                                                                    <td className="px-3.5 py-2.5 text-gray-700">{m.dosage || "—"}</td>
+                                                                    <td className="px-3.5 py-2.5 text-gray-600">
+                                                                        {[m.frequency, m.time_of_day].filter(Boolean).join(" · ") || "—"}
+                                                                    </td>
+                                                                    <td className="px-3.5 py-2.5 text-gray-500">{m.instructions || "—"}</td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            !plan.expected_recovery_date && !plan.care_notes && (
+                                                <p className="text-xs text-gray-400">No active medications prescribed yet.</p>
+                                            )
+                                        )}
+
+                                        {/* Doctor Care Notes */}
+                                        {plan.care_notes && (
+                                            <div className="rounded-xl bg-amber-50/80 border border-amber-200/60 p-3.5">
+                                                <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-800 mb-1 flex items-center gap-1.5">
+                                                    <FileText className="h-3.5 w-3.5" /> Doctor's Instructions
+                                                </p>
+                                                <p className="text-xs text-amber-900 leading-relaxed font-medium">
+                                                    {plan.care_notes}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </Card>
+                )}
 
                 {/* Recovery Tasks */}
                 {(myTasks.isLoading || (myTasks.data && myTasks.data.length > 0)) && (

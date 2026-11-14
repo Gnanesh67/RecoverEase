@@ -17,6 +17,7 @@ from email.mime.text import MIMEText
 from html import escape as html_escape
 
 import aiosmtplib
+import httpx
 
 from app.core.config import settings
 from app.core.logger import logger
@@ -41,29 +42,59 @@ def _build_message(to: str, subject: str, html_body: str) -> MIMEMultipart:
 
 
 async def _send(to: str, subject: str, html_body: str) -> bool:
-    """Core SMTP send — never raises, returns True on success."""
+    """Core send — supports Resend HTTP API (port 443, Render free tier compatible) or Gmail SMTP."""
     if not settings.smtp_enabled:
         logger.info("email_logged_only", to=to, subject=subject)
         return False
-    try:
-        msg = _build_message(to, subject, html_body)
-        use_tls = settings.smtp_port == 465
-        start_tls = settings.smtp_port == 587
-        await aiosmtplib.send(
-            msg,
-            hostname=settings.smtp_host,
-            port=settings.smtp_port,
-            username=settings.smtp_user,
-            password=settings.smtp_password,
-            use_tls=use_tls,
-            start_tls=start_tls,
-            timeout=10.0,
-        )
-        logger.info("email_sent", to=to, subject=subject)
-        return True
-    except Exception as e:
-        logger.error("email_failed", to=to, subject=subject, error=str(e))
-        return False
+
+    # 1. Prefer Resend HTTP API if configured (port 443 — never blocked by Render)
+    if settings.resend_api_key:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    "https://api.resend.com/emails",
+                    headers={
+                        "Authorization": f"Bearer {settings.resend_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "from": f"{settings.smtp_from_name} <onboarding@resend.dev>",
+                        "to": [to],
+                        "subject": subject,
+                        "html": html_body,
+                    },
+                )
+                if resp.status_code in (200, 201):
+                    logger.info("email_sent_resend", to=to, subject=subject)
+                    return True
+                else:
+                    logger.error("resend_failed", to=to, status=resp.status_code, body=resp.text)
+        except Exception as e:
+            logger.error("resend_exception", to=to, error=str(e))
+
+    # 2. Gmail SMTP
+    if settings.smtp_user and settings.smtp_password:
+        try:
+            msg = _build_message(to, subject, html_body)
+            use_tls = settings.smtp_port == 465
+            start_tls = settings.smtp_port == 587
+            await aiosmtplib.send(
+                msg,
+                hostname=settings.smtp_host,
+                port=settings.smtp_port,
+                username=settings.smtp_user,
+                password=settings.smtp_password,
+                use_tls=use_tls,
+                start_tls=start_tls,
+                timeout=10.0,
+            )
+            logger.info("email_sent_smtp", to=to, subject=subject)
+            return True
+        except Exception as e:
+            logger.error("email_failed", to=to, subject=subject, error=str(e))
+            return False
+
+    return False
 
 
 async def send_caregiver_alert(

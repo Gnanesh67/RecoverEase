@@ -112,6 +112,26 @@ async def _chat(
 
         except APIError as e:
             logger.error("groq_api_error", status=getattr(e, "status_code", None), error=str(e))
+            # If the model is not found (404), automatically fallback to llama-3.1-8b-instant
+            if (getattr(e, "status_code", None) == 404 or "model_not_found" in str(e)) and settings.groq_model != "llama-3.1-8b-instant":
+                logger.info("groq_retrying_with_fallback_model", fallback="llama-3.1-8b-instant")
+                try:
+                    fb_resp = await client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        max_tokens=tokens,
+                        temperature=GROQ["temperature"],
+                        response_format={"type": "json_object"},
+                    )
+                    fb_content = fb_resp.choices[0].message.content or "{}"
+                    fb_result = _extract_json(fb_content)
+                    if fb_result is not None:
+                        return fb_result
+                except Exception as fb_err:
+                    logger.error("groq_fallback_model_failed", error=str(fb_err))
             return None
 
         except Exception as e:
@@ -259,6 +279,18 @@ async def ai_chat_reply(
 
         except (APITimeoutError, APIError, Exception) as e:
             logger.error("groq_chat_error", error=str(e))
+            # Fallback to llama-3.1-8b-instant if model_not_found
+            if "model_not_found" in str(e) or "does not exist" in str(e):
+                try:
+                    fb_resp = await client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=messages_payload,  # type: ignore[arg-type]
+                        max_tokens=400,
+                        temperature=0.75,
+                    )
+                    return (fb_resp.choices[0].message.content or "").strip()
+                except Exception as fb_e:
+                    logger.error("groq_chat_fallback_error", error=str(fb_e))
             return "Sorry, I couldn't process that. Please try again."
 
     return None

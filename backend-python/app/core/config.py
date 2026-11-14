@@ -35,14 +35,15 @@ class Settings(BaseSettings):
 
     # -- Groq AI --
     groq_api_key: str
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "llama-3.1-8b-instant"
 
-    # -- SMTP Email (Gmail recommended) --
+    # -- Email (Resend HTTP API for Render Free Tier, or Gmail SMTP) --
+    resend_api_key: str = ""     # Resend API key (re_...) works over HTTPS port 443 on Render free tier
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
     smtp_user: str = ""          # your Gmail address
     smtp_password: str = ""      # Gmail App Password (16-char, needs 2FA)
-    smtp_from_name: str = "Recovery Companion"
+    smtp_from_name: str = "RecoverEase"
 
     # -- WhatsApp Business (Meta Cloud API) --
     # Get from: https://developers.facebook.com/apps → WhatsApp → API Setup
@@ -61,8 +62,8 @@ class Settings(BaseSettings):
 
     @property
     def smtp_enabled(self) -> bool:
-        """True when a Gmail address and App Password are configured."""
-        return bool(self.smtp_user and self.smtp_password)
+        """True when an email service (Resend API or Gmail SMTP) is configured."""
+        return bool(self.resend_api_key or (self.smtp_user and self.smtp_password))
 
     @property
     def whatsapp_enabled(self) -> bool:
